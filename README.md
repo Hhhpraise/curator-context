@@ -22,12 +22,12 @@ Every context compressor — Headroom, Hermes, Claude Compaction, TokMan — tre
 ## How Curator Works
 
 ```
-Context enters → Curator classifies → Compressor gets routing instructions
+Context enters -> Curator classifies -> Compressor gets routing instructions
 
-🔴 PINNED     → Never compress. Anchor at position 0 on every request.
-🔵 PRESERVED  → Structured compression only. Exact values survive.
-🟢 SUMMARIZABLE → Safe for LLM compression. Archive original by UUID.
-⬜ DISCARDABLE  → Remove entirely. Re-derivable from disk.
+RED PINNED:      Never compress. Anchor at position 0 on every request.
+BLUE PRESERVED:  Structured compression only. Exact values survive.
+GREEN SUMMARIZABLE: Safe for LLM compression. Archive original by UUID.
+GREY DISCARDABLE:  Remove entirely. Re-derivable from disk.
 ```
 
 Every piece of context is scored on **three axes of irreplaceability**:
@@ -54,9 +54,9 @@ Score HIGH on *any* axis → pinned or preserved. All LOW → safe to discard.
 You: I need to refactor auth. Don't touch the DB, keep API contracts stable, port is 8443.
 
 Curator: Got it.
-  🔴 C001: "Don't touch the database layer"
-  🔴 C002: "Don't change any API contracts"
-  🔵 P001: "auth service port = 8443"
+  * C001: "Don't touch the database layer"
+  * C002: "Don't change any API contracts"
+  * P001: "auth service port = 8443"
   Anchored at position 0. Validating all future actions against these.
 ```
 
@@ -64,7 +64,7 @@ Curator: Got it.
 
 | Command | What it does |
 |---------|-------------|
-| `/curator classify [text]` | Classify a piece of context into 🔴🔵🟢⬜ |
+| `/curator classify [text]` | Classify a piece of context into red/blue/green/grey |
 | `/curator audit` | Scan for unprotected context. Report top 5 risks. |
 | `/curator constraint add [rule]` | Pin a constraint. Anchors at position 0 forever. |
 | `/curator constraint list` | Show all active constraints with IDs and age. |
@@ -78,13 +78,13 @@ Curator: Got it.
 They compress. Curator **triages**. Use them together.
 
 ```
-        ┌──────────┐
-Context │ Curator  │   🔴 → Bypass compressor, anchor at position 0
-  ─────→│ (triage) │── 🔵 → Structured compression only
-        └────┬─────┘   🟢 → Headroom / TokMan / LLMLingua
-             │          ⬜ → Discard
-             ▼
-      Compression Layer
+                        +------------+
+Context  ----------->   |  Curator   |   RED: PINNED --> Bypass compressor
+                        |  (triage)  |   BLUE: PRESERVED --> Structured only
+                        +-----+------+   GREEN: SUMMARIZABLE --> Headroom / TokMan
+                              |          GREY: DISCARDABLE --> Remove
+                              v
+                       Compression Layer
 ```
 
 Curator isn't a replacement — it's a routing layer that tells your existing compressor what to protect and what's safe to crush.
@@ -103,8 +103,8 @@ This skill is grounded directly in peer-reviewed 2026 research:
 
 | Tool | What it does | Curator + it |
 |------|-------------|-------------|
-| **Headroom** | Token-level compression (60-95% savings) | Curator classifies first → Headroom only compresses 🟢 and ⬜ content |
-| **TokMan** | 31-layer CLI proxy pipeline | Curator routes 🔴 and 🔵 around TokMan entirely |
+| **Headroom** | Token-level compression (60-95% savings) | Curator classifies first; Headroom only compresses green and grey content |
+| **TokMan** | 31-layer CLI proxy pipeline | Curator routes red and blue around TokMan entirely |
 | **LLMLingua** | Small-LM importance scoring (up to 20x compression) | Curator pre-flags what LLMLingua should score LOW (never drop) |
 | **Hermes Agent** | Dual-threshold (50% + 85%) agent-native compression | Curator replaces blind thresholds with semantic boundaries |
-| **Claude Compaction API** | Server-side auto-compression | Curator protects const
+| **Claude Compaction API** | Server-side auto-compress
