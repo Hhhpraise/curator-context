@@ -7,3 +7,4 @@ __pycache__/
 *.skill
 node_modules/
 .env
+PUBLISHING.md

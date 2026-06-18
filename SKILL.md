@@ -26,7 +26,7 @@ Every piece of context entering the agent's working memory gets classified into 
 #### 1. PINNED — Never Compress, Always Anchor
 **What:** Hard constraints, must-not-violate rules, security boundaries, compliance requirements.
 **Examples:** "Never modify the database schema," "Don't touch test files," "Use only Postgres, no Redis," "Port must be 8080," "The API key for service X is sk-abc123."
-**Treatment:** Injected at the top of the system prompt on every API call (position 0, before any tool output). Validated against proposed agent actions before execution. Never passes through a summarizer.
+**Treatment:** Restated in every response where relevant — at the top of a new major task, after compression fires, and before any decision that could violate the constraint. If MCP memory tools are available (see MCP Integration section), persisted to a cross-session constraint store. Never passed through a summarizer. The LLM self-validates proposed tool calls against the pinned constraint list before returning them. Note: true position-0 system prompt injection requires platform-level support (Claude Code hooks, Cowork plugins); in standard LLM contexts, anchoring means the agent perennially restates and references these constraints as the first layer of every response.
 **Visual marker:** 🔴 Red
 
 #### 2. PRESERVED — Compress with Structured Fidelity
@@ -60,7 +60,14 @@ Classify each context unit by scoring it on these three axes. A unit only needs 
 **Scoring matrix:**
 - Any axis HIGH → minimum PINNED (if constraint) or PRESERVED (if value/reasoning/dependency)
 - All axes LOW → DISCARDABLE
-- Mixed (recoverability LOW, but constraint/dependency also LOW) → SUMMARIZABLE
+- Two or more axes MEDIUM → PRESERVED (edge-case risk is too high to summarize)
+- One axis MEDIUM, rest LOW → SUMMARIZABLE (the MEDIUM axis flags caution but doesn't require preservation)
+- Mixed HIGH + LOW on different axes → classify by the HIGH axis (pinned if constraint, preserved if value/dependency)
+
+**What MEDIUM means on each axis:**
+- **Recoverability MEDIUM:** Can be partially re-derived but with effort (e.g., re-running a tool that may produce slightly different output, or consulting a config file that may have been modified). The information is not *lost forever* but recovering it is error-prone.
+- **Constraint Criticality MEDIUM:** Violation would cause a significant inconvenience but not an unrecoverable error (e.g., choosing a suboptimal library, missing a formatting convention). The system still works but the cost of getting it wrong is real.
+- **Dependency Risk MEDIUM:** A decision made here *might* affect a future turn but the linkage is speculative — it's not a hard prerequisite but it's context that could save re-work.
 
 ## Commands
 
@@ -120,14 +127,18 @@ When starting a new session, immediately ask the user: "Any hard constraints I s
 If the user says they're about to compress context (or if you detect context approaching limits), run a `/curator pre-compress` automatically. Flag anything critical that the compressor would destroy.
 
 ### Pattern 3: Post-Compression — Integrity Check
-After compression fires, run a quick audit: "I've pinned constraints C001-C003 at position 0. Checking preserved values... P001 (`retry_limit=3`) intact. P002 (Postgres decision reasoning) intact. Dependency D001 (turn 12→47 linkage) intact."
+After compression fires, run a quick audit: "I've re-anchored constraints C001-C003 in the current response. Checking preserved values... P001 (`retry_limit=3`) intact. P002 (Postgres decision reasoning) intact. Dependency D001 (turn 12→47 linkage) intact."
 
-### Pattern 4: Constraint Violation Detection
-Before executing any tool that modifies state (file writes, git operations, database changes, API calls with side effects), check proposed actions against the pinned constraint list. If a violation is detected, block and flag: "⚠️ Constraint C001 violation: this action would modify the database schema, which is pinned as never-touch."
+### Pattern 4: Constraint Violation Self-Check
+Before proposing any tool that modifies state (file writes, git operations, database changes, API calls with side effects), self-validate your proposed actions against the pinned constraint list. If a violation would occur, do not propose the tool call — instead flag it in your response: "⚠️ Constraint C001 violation: this action would modify the database schema, which is pinned as never-touch. Suggesting alternative approach..." Because the LLM cannot intercept tool execution at runtime, this is a self-validation step — the agent checks its own proposals before returning them. For stronger enforcement, consider using platform-level hooks (Claude Code hooks, Cowork pre-tool validation) where available.
 
 ## MCP Integration for Persistent Storage
 
-For long-running sessions or sessions that span multiple conversations, use the `mcp__memory` tools if available to persist constraints across sessions. The constraint store format:
+For long-running sessions or sessions that span multiple conversations, use memory persistence tools if available to persist constraints across sessions.
+
+**Detection pattern:** At session start, check your available tool list for MCP memory tools. Common tool names include `mcp__memory__persist`, `mcp__memory__recall`, `mcp__memory__create_entities`, `mcp__memory__get_entities`, `mcp__memory__delete_entities`, or `memory__*`. If any persistent memory tool is detected, use it to store and retrieve constraints. If none are available, fall back to conversation-level maintenance (see "The Conversation Is Your Database" below).
+
+The constraint store format when persistence is available:
 
 ```
 curator/constraints/C001: "never use Redis" (set 2026-06-18, session abc123)
@@ -135,7 +146,12 @@ curator/constraints/C002: "don't modify database schema" (set 2026-06-18, sessio
 curator/dependencies/D001: "schema change (turn 12) → auth fix (turn 27)"
 ```
 
-If no MCP memory tools are available, maintain constraints in the conversation itself but always re-anchor them at the top of every user-facing response where they're relevant.
+**Constraint ID collision avoidance:** Constraint IDs (C001, C002, ...) must be unique within and across sessions. When assigning a new ID:
+- If MCP memory is available: query existing constraints first, find the highest existing ID, and increment (e.g., if C001-C005 exist, assign C006). 
+- If MCP memory is NOT available: prefix IDs with the session date to avoid collisions (e.g., `C0618-001` for June 18, first constraint). This ensures two sessions on different days won't reuse the same bare ID for different constraints.
+- If the user provides a constraint that duplicates an existing one by content (not by ID), link them: "This constraint matches C001 from session abc123" rather than creating a duplicate.
+
+If no MCP memory tools are available, maintain constraints in the conversation itself but always restate them at the top of every user-facing response where they're relevant.
 
 ## The Conversation Is Your Database
 
@@ -158,8 +174,8 @@ Curator: Got it. Classifying your constraints:
   🔵 PRESERVED P001: "auth service port = 8443"
      (Recoverability: HIGH — can't be derived from code, must stay exact)
 
-  These will be anchored at position 0 for all work in this session. 
-  I'll validate every proposed file edit against C001 and C002 before executing.
+  These constraints are now anchored for this session. 
+  I'll self-validate every proposed file edit against C001 and C002 before proposing any tool calls.
 ```
 
 ### Example 2: Pre-Compression Audit Before Summarization Fires
@@ -169,7 +185,7 @@ User: We're at 85% context. Compression is about to fire.
 Curator: Running pre-compression audit...
   
   Current context: 142 turns, ~95K tokens
-  🔴 Pinned constraints: C001, C002, C003 — all anchored at position 0 (SAFE)
+  🔴 Pinned constraints: C001, C002, C003 — all restated in recent context, low decay risk
   🔵 Preserved values: P001 (port), P002 (why Postgres over Redis) — both in 
      last 20 turns, low decay risk
   🟢 Summarizable: turns 1-35 (initial exploration, tool outputs) — safe to compress
@@ -180,17 +196,17 @@ Curator: Running pre-compression audit...
   Expected token savings: ~40% without losing any critical context.
 ```
 
-### Example 3: Constraint Violation Detection
+### Example 3: Constraint Violation Self-Check
 ```
-Agent proposes: "I'll add a Redis cache layer for session tokens."
+Agent considers proposing: "I'll add a Redis cache layer for session tokens."
 
-Curator: ⚠️ BLOCKED — Constraint C001 violation.
+Curator (self-check): ⚠️ BLOCKED — Constraint C001 violation.
   "Never use Redis" (set at turn 7, 38 turns ago).
   Reason at time of constraint: "Redis isn't compliance-approved for this project."
   
-  Suggested alternative: Use Postgres unlogged tables for session caching, 
-  or escalate to user for a constraint exception.
-```
+  I will NOT propose this tool call. Suggesting alternative: use Postgres unlogged 
+  tables for session caching, or escalate to user for a constraint exception.
+	```
 
 ## Research References
 
