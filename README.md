@@ -107,4 +107,4 @@ This skill is grounded directly in peer-reviewed 2026 research:
 | **TokMan** | 31-layer CLI proxy pipeline | Curator routes red and blue around TokMan entirely |
 | **LLMLingua** | Small-LM importance scoring (up to 20x compression) | Curator pre-flags what LLMLingua should score LOW (never drop) |
 | **Hermes Agent** | Dual-threshold (50% + 85%) agent-native compression | Curator replaces blind thresholds with semantic boundaries |
-| **Claude Compaction API** | Server-side auto-compress
+| **Claude Compaction API** | Server-side auto-compress | Curator protects constraints before the API ever sees them |
