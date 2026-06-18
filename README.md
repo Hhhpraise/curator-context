@@ -107,4 +107,29 @@ This skill is grounded directly in peer-reviewed 2026 research:
 | **TokMan** | 31-layer CLI proxy pipeline | Curator routes red and blue around TokMan entirely |
 | **LLMLingua** | Small-LM importance scoring (up to 20x compression) | Curator pre-flags what LLMLingua should score LOW (never drop) |
 | **Hermes Agent** | Dual-threshold (50% + 85%) agent-native compression | Curator replaces blind thresholds with semantic boundaries |
-| **Claude Compaction API** | Server-side auto-compress | Curator protects constraints before the API ever sees them |
+| Claude Compaction API | Server-side auto-compression | Curator protects constraints before the API ever sees them |
+ 
+## Project Structure
+ 
+```text
+curator-context/
+  SKILL.md              The Claude Skill (all logic lives here)
+  README.md             This file
+  LICENSE               MIT
+  CONTRIBUTING.md       How to contribute
+  PUBLISHING.md         Launch checklist and strategy
+```
+ 
+## Contributing
+ 
+1. Fork this repo
+2. Read SKILL.md to understand the triage architecture
+3. Propose your change — new classification rules, better irreplaceability scoring, additional commands
+4. Test with a 50+ turn agent session and verify constraint survival
+5. Open a PR — include your test scenario and edge cases discovered
+ 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full process.
+ 
+## License
+ 
+MIT — use it, fork it, build on it. If Curator saves you from a production constraint violation, I'd love to hear about it.
